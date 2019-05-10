@@ -30,12 +30,107 @@
 
 #include<time.h>
 
+#define CMV_MAX_BUF 1024
+#define MAX_POL_LENGTH 64
+
+struct ocam_model
+{
+	double pol[MAX_POL_LENGTH];    // the polynomial coefficients: pol[0] + x"pol[1] + x^2*pol[2] + ... + x^(N-1)*pol[N-1]
+	int length_pol;                // length of polynomial
+	double invpol[MAX_POL_LENGTH]; // the coefficients of the inverse polynomial
+	int length_invpol;             // length of inverse polynomial
+	double xc;         // row coordinate of the center
+	double yc;         // column coordinate of the center
+	double c;          // affine parameter
+	double d;          // affine parameter
+	double e;          // affine parameter
+	int width;         // image width
+	int height;        // image height
+};
+
+int get_ocam_model(struct ocam_model *myocam_model, char *filename);
+void world2cam(double point2D[2], double point3D[3], struct ocam_model *myocam_model);
+void cam2world(double point3D[3], double point2D[2], struct ocam_model *myocam_model);
+void create_perspecive_undistortion_LUT(CvMat *mapx, CvMat *mapy, struct ocam_model *ocam_model, float sf);
+
+int get_ocam_model(struct ocam_model *myocam_model, char *filename)
+{
+	double *pol = myocam_model->pol;
+	double *invpol = myocam_model->invpol;
+	double *xc = &(myocam_model->xc);
+	double *yc = &(myocam_model->yc);
+	double *c = &(myocam_model->c);
+	double *d = &(myocam_model->d);
+	double *e = &(myocam_model->e);
+	int    *width = &(myocam_model->width);
+	int    *height = &(myocam_model->height);
+	int *length_pol = &(myocam_model->length_pol);
+	int *length_invpol = &(myocam_model->length_invpol);
+	FILE *f;
+	char buf[CMV_MAX_BUF];
+	int i;
+
+	//Open file
+	if (!(f = fopen(filename, "r")))
+	{
+		printf("File %s cannot be opened\n", filename);
+		return -1;
+	}
+
+	//Read polynomial coefficients
+	fgets(buf, CMV_MAX_BUF, f);
+	fscanf(f, "\n");
+	fscanf(f, "%d", length_pol);
+	for (i = 0; i < *length_pol; i++)
+	{
+		fscanf(f, " %lf", &pol[i]);
+	}
+
+	//Read inverse polynomial coefficients
+	fscanf(f, "\n");
+	fgets(buf, CMV_MAX_BUF, f);
+	fscanf(f, "\n");
+	fscanf(f, "%d", length_invpol);
+	for (i = 0; i < *length_invpol; i++)
+	{
+		fscanf(f, " %lf", &invpol[i]);
+	}
+
+	//Read center coordinates
+	fscanf(f, "\n");
+	fgets(buf, CMV_MAX_BUF, f);
+	fscanf(f, "\n");
+	fscanf(f, "%lf %lf\n", xc, yc);
+
+	//Read affine coefficients
+	fgets(buf, CMV_MAX_BUF, f);
+	fscanf(f, "\n");
+	fscanf(f, "%lf %lf %lf\n", c, d, e);
+
+	//Read image size
+	fgets(buf, CMV_MAX_BUF, f);
+	fscanf(f, "\n");
+	fscanf(f, "%d %d", height, width);
+
+	fclose(f);
+	return 0;
+}
+
+
+
 using namespace std;
 
 // From http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
 
 int main(int argc, char **argv)
 {
+
+	cv::Mat source, destination;
+
+	struct ocam_model o;
+	char str[] = "./calib_results_fisheye.txt";
+	get_ocam_model(&o, str);
+
 	string vocabPath = "ORBvoc.txt";
 	string settingsPath = "webcam.yaml";
 	if (argc == 1)
@@ -63,7 +158,9 @@ int main(int argc, char **argv)
     cout << endl << "-------" << endl;
     cout << "Start processing sequence ..." << endl;
 
-	cv::VideoCapture cap(0);
+	cv::VideoCapture cap(1);
+
+
 
 
 	// From http://stackoverflow.com/questions/19555121/how-to-get-current-timestamp-in-milliseconds-since-1970-just-the-way-java-gets
@@ -71,16 +168,36 @@ int main(int argc, char **argv)
 
 
 	// Main loop
-	cv::Mat im;
 	cv::Mat Tcw;
     while (true)
     {
-		cap.read(im);
+
+		cap.set(CV_CAP_PROP_FRAME_WIDTH, 640);
+		cap.set(CV_CAP_PROP_FRAME_HEIGHT, 480);
+
+		cv::Mat src;
+		cap >> src;
+		IplImage copy;
+		copy = src;
+		IplImage *src1 = &copy;
+		IplImage *dst_persp = cvCreateImage(cvGetSize(src1), 8, 3);
+
+
+		CvMat* mapx_persp = cvCreateMat(src1->height, src1->width, CV_32FC1);
+		CvMat* mapy_persp = cvCreateMat(src1->height, src1->width, CV_32FC1);
+
+		float sf = 1.5;
+		create_perspecive_undistortion_LUT(mapx_persp, mapy_persp, &o, sf);
+
+		cvRemap(src1, dst_persp, mapx_persp, mapy_persp, CV_INTER_LINEAR + CV_WARP_FILL_OUTLIERS, cvScalarAll(0));
+
+		source = cv::cvarrToMat(src1);
+		destination = cv::cvarrToMat(dst_persp);
 
 		__int64 curNow = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
 		// Pass the image to the SLAM system
-		Tcw = SLAM.TrackMonocular(im, curNow / 1000.0);
+		Tcw = SLAM.TrackMonocular(destination, curNow / 1000.0);
 
 		/* This can write each image with its position to a file if you want
 		if (!Tcw.empty())
@@ -98,7 +215,8 @@ int main(int argc, char **argv)
 		*/
 
 		// This will make a third window with the color images, you need to click on this then press any key to quit
-		cv::imshow("Image", im);
+		cv::namedWindow("Undistorted Perspective Image", 1);
+		cv::imshow("Undistorted Perspective Image", destination);
 
 
 		if (cv::waitKey(1) >= 0)
@@ -113,4 +231,106 @@ int main(int argc, char **argv)
     SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
 
     return 0;
+}
+
+void cam2world(double point3D[3], double point2D[2], struct ocam_model *myocam_model)
+{
+	double *pol = myocam_model->pol;
+	double xc = (myocam_model->xc);
+	double yc = (myocam_model->yc);
+	double c = (myocam_model->c);
+	double d = (myocam_model->d);
+	double e = (myocam_model->e);
+	int length_pol = (myocam_model->length_pol);
+	double invdet = 1 / (c - d * e); // 1/det(A), where A = [c,d;e,1] as in the Matlab file
+
+	double xp = invdet * ((point2D[0] - xc) - d * (point2D[1] - yc));
+	double yp = invdet * (-e * (point2D[0] - xc) + c * (point2D[1] - yc));
+
+	double r = sqrt(xp*xp + yp * yp); //distance [pixels] of  the point from the image center
+	double zp = pol[0];
+	double r_i = 1;
+	int i;
+
+	for (i = 1; i < length_pol; i++)
+	{
+		r_i *= r;
+		zp += r_i * pol[i];
+	}
+
+	//normalize to unit norm
+	double invnorm = 1 / sqrt(xp*xp + yp * yp + zp * zp);
+
+	point3D[0] = invnorm * xp;
+	point3D[1] = invnorm * yp;
+	point3D[2] = invnorm * zp;
+}
+
+void world2cam(double point2D[2], double point3D[3], struct ocam_model *myocam_model)
+{
+	double *invpol = myocam_model->invpol;
+	double xc = (myocam_model->xc);
+	double yc = (myocam_model->yc);
+	double c = (myocam_model->c);
+	double d = (myocam_model->d);
+	double e = (myocam_model->e);
+	int    width = (myocam_model->width);
+	int    height = (myocam_model->height);
+	int length_invpol = (myocam_model->length_invpol);
+	double norm = sqrt(point3D[0] * point3D[0] + point3D[1] * point3D[1]);
+	double theta = atan(point3D[2] / norm);
+	double t, t_i;
+	double rho, x, y;
+	double invnorm;
+	int i;
+
+	if (norm != 0)
+	{
+		invnorm = 1 / norm;
+		t = theta;
+		rho = invpol[0];
+		t_i = 1;
+
+		for (i = 1; i < length_invpol; i++)
+		{
+			t_i *= t;
+			rho += t_i * invpol[i];
+		}
+
+		x = point3D[0] * invnorm*rho;
+		y = point3D[1] * invnorm*rho;
+
+		point2D[0] = x * c + y * d + xc;
+		point2D[1] = x * e + y + yc;
+	}
+	else
+	{
+		point2D[0] = xc;
+		point2D[1] = yc;
+	}
+}
+
+void create_perspecive_undistortion_LUT(CvMat *mapx, CvMat *mapy, struct ocam_model *ocam_model, float sf)
+{
+	int i, j;
+	int width = mapx->cols; //New width
+	int height = mapx->rows;//New height     
+	float *data_mapx = mapx->data.fl;
+	float *data_mapy = mapy->data.fl;
+	float Nxc = height / 2.0;
+	float Nyc = width / 2.0;
+	float Nz = -width / sf;
+	double M[3];
+	double m[2];
+
+	for (i = 0; i<height; i++)
+		for (j = 0; j<width; j++)
+		{
+			M[0] = (i - Nxc);
+			M[1] = (j - Nyc);
+			M[2] = Nz;
+			world2cam(m, M, ocam_model);
+			*(data_mapx + i * width + j) = (float)m[1];
+			*(data_mapy + i * width + j) = (float)m[0];
+		}
 }
