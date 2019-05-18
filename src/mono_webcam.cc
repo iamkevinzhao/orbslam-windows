@@ -166,6 +166,9 @@ int main(int argc, char **argv)
 	// From http://stackoverflow.com/questions/19555121/how-to-get-current-timestamp-in-milliseconds-since-1970-just-the-way-java-gets
 	__int64 now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
+	__int64 last = now;
+	int id = 0;
+	std::list<cv::Mat> traj;
 
 	// Main loop
 	cv::Mat Tcw;
@@ -199,6 +202,18 @@ int main(int argc, char **argv)
 		// Pass the image to the SLAM system
 		Tcw = SLAM.TrackMonocular(destination, curNow / 1000.0);
 
+		if (!Tcw.empty()) {
+			cv::Mat Rwc = Tcw.rowRange(0, 3).colRange(0, 3).t();
+			cv::Mat twc = -Rwc*Tcw.rowRange(0, 3).col(3);
+			std::ostringstream stream;
+			stream << twc.at<float>(0) << " " << twc.at<float>(1) << " " << twc.at<float>(2);
+			string fileName = stream.str();
+			if ((curNow - last) > 1000) {
+				std::cout << fileName << std::endl;
+				last = curNow;
+				traj.push_back(twc);
+			}
+		}
 		/* This can write each image with its position to a file if you want
 		if (!Tcw.empty())
 		{
@@ -222,6 +237,13 @@ int main(int argc, char **argv)
 		if (cv::waitKey(1) >= 0)
 			break;
     }
+
+	ofstream os;
+	os.open("traj.txt");
+	for (auto& pose : traj) {
+		os << pose.at<float>(0) << " " << pose.at<float>(1) << " " << pose.at<float>(2) << "\n";
+	}
+	os.close();
 
     // Stop all threads
     SLAM.Shutdown();
