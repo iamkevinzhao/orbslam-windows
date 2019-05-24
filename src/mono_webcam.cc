@@ -158,8 +158,8 @@ int main(int argc, char **argv)
     cout << endl << "-------" << endl;
     cout << "Start processing sequence ..." << endl;
 
-	cv::VideoCapture cap(1);
-
+	cv::VideoCapture cap(2);
+	cv::VideoCapture stereo(0);
 
 
 
@@ -170,6 +170,9 @@ int main(int argc, char **argv)
 	int id = 0;
 	std::list<cv::Mat> traj;
 
+	std::list<cv::Mat> mono_images;
+	std::list<cv::Mat> stereo_images;
+
 	// Main loop
 	cv::Mat Tcw;
     while (true)
@@ -177,9 +180,19 @@ int main(int argc, char **argv)
 
 		cap.set(CV_CAP_PROP_FRAME_WIDTH, 640);
 		cap.set(CV_CAP_PROP_FRAME_HEIGHT, 480);
+		// cap.set(CV_CAP_PROP_AUTO_EXPOSURE, 0.25);
+
+		stereo.set(CV_CAP_PROP_FRAME_WIDTH, 1280);
+		stereo.set(CV_CAP_PROP_FRAME_HEIGHT, 480);
+
+		cv::Mat stereo_image;
+		stereo >> stereo_image;
+		stereo_images.push_back(std::move(stereo_image));
 
 		cv::Mat src;
 		cap >> src;
+		mono_images.push_back(src.clone());
+
 		IplImage copy;
 		copy = src;
 		IplImage *src1 = &copy;
@@ -244,6 +257,21 @@ int main(int argc, char **argv)
 		os << pose.at<float>(0) << " " << pose.at<float>(1) << " " << pose.at<float>(2) << "\n";
 	}
 	os.close();
+
+	id = 0;
+	for (auto& image : mono_images) {
+		++id;
+		if (!image.empty()) {
+			cv::imwrite(("./images/mono_" + std::to_string(id) + ".jpg").c_str(), image);
+		}
+	}
+	id = 0;
+	for (auto& image : stereo_images) {
+		++id;
+		if (!image.empty()) {
+			cv::imwrite(("./images/stereo_" + std::to_string(id) + ".jpg").c_str(), image);
+		}
+	}
 
     // Stop all threads
     SLAM.Shutdown();
