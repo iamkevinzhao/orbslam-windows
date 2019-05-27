@@ -158,8 +158,8 @@ int main(int argc, char **argv)
     cout << endl << "-------" << endl;
     cout << "Start processing sequence ..." << endl;
 
-	cv::VideoCapture cap(2);
-	cv::VideoCapture stereo(0);
+	cv::VideoCapture cap(1);
+	cv::VideoCapture stereo(2);
 
 
 
@@ -185,13 +185,21 @@ int main(int argc, char **argv)
 		stereo.set(CV_CAP_PROP_FRAME_WIDTH, 1280);
 		stereo.set(CV_CAP_PROP_FRAME_HEIGHT, 480);
 
+		++id;
+
 		cv::Mat stereo_image;
 		stereo >> stereo_image;
-		stereo_images.push_back(std::move(stereo_image));
+		// stereo_images.push_back(std::move(stereo_image));
+		if (!stereo_image.empty()) {
+			cv::imwrite(("./images/stereo_" + std::to_string(id) + ".jpg").c_str(), stereo_image);
+		}
 
 		cv::Mat src;
 		cap >> src;
-		mono_images.push_back(src.clone());
+		// mono_images.push_back(src.clone());
+		if (!src.empty()) {
+			cv::imwrite(("./images/mono_" + std::to_string(id) + ".jpg").c_str(), src);
+		}
 
 		IplImage copy;
 		copy = src;
@@ -243,8 +251,8 @@ int main(int argc, char **argv)
 		*/
 
 		// This will make a third window with the color images, you need to click on this then press any key to quit
-		cv::namedWindow("Undistorted Perspective Image", 1);
-		cv::imshow("Undistorted Perspective Image", destination);
+		//cv::namedWindow("Undistorted Perspective Image", 1);
+		//cv::imshow("Undistorted Perspective Image", destination);
 
 
 		if (cv::waitKey(1) >= 0)
@@ -258,20 +266,20 @@ int main(int argc, char **argv)
 	}
 	os.close();
 
-	id = 0;
-	for (auto& image : mono_images) {
-		++id;
-		if (!image.empty()) {
-			cv::imwrite(("./images/mono_" + std::to_string(id) + ".jpg").c_str(), image);
-		}
-	}
-	id = 0;
-	for (auto& image : stereo_images) {
-		++id;
-		if (!image.empty()) {
-			cv::imwrite(("./images/stereo_" + std::to_string(id) + ".jpg").c_str(), image);
-		}
-	}
+	//id = 0;
+	//for (auto& image : mono_images) {
+	//	++id;
+	//	if (!image.empty()) {
+	//		cv::imwrite(("./images/mono_" + std::to_string(id) + ".jpg").c_str(), image);
+	//	}
+	//}
+	//id = 0;
+	//for (auto& image : stereo_images) {
+	//	++id;
+	//	if (!image.empty()) {
+	//		cv::imwrite(("./images/stereo_" + std::to_string(id) + ".jpg").c_str(), image);
+	//	}
+	//}
 
     // Stop all threads
     SLAM.Shutdown();
