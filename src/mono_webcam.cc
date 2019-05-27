@@ -121,7 +121,102 @@ int get_ocam_model(struct ocam_model *myocam_model, char *filename)
 using namespace std;
 
 // From http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
+#if 1
+int main(int argc, char **argv)
+{
 
+	cv::Mat source, destination;
+
+	struct ocam_model o;
+	char str[] = "./calib_results_fisheye.txt";
+	get_ocam_model(&o, str);
+
+	string vocabPath = "ORBvoc.txt";
+	string settingsPath = "webcam.yaml";
+	if (argc == 1)
+	{
+
+	}
+	else if (argc == 2)
+	{
+		vocabPath = argv[1];
+	}
+	else if (argc == 3)
+	{
+		vocabPath = argv[1];
+		settingsPath = argv[2];
+	}
+	else
+	{
+		cerr << endl << "Usage: mono_webcam.exe path_to_vocabulary path_to_settings" << endl;
+		return 1;
+	}
+
+	// Create SLAM system. It initializes all system threads and gets ready to process frames.
+	ORB_SLAM2::System SLAM(vocabPath, settingsPath, ORB_SLAM2::System::MONOCULAR, true);
+
+	cout << endl << "-------" << endl;
+	cout << "Start processing sequence ..." << endl;
+
+	// cv::VideoCapture cap(1);
+	// cv::VideoCapture stereo(2);
+
+
+
+	// From http://stackoverflow.com/questions/19555121/how-to-get-current-timestamp-in-milliseconds-since-1970-just-the-way-java-gets
+	__int64 now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+	__int64 last = now;
+	int id = 0;
+	std::list<cv::Mat> traj;
+
+	std::list<cv::Mat> mono_images;
+	std::list<cv::Mat> stereo_images;
+
+	// Main loop
+	cv::Mat Tcw;
+	while (true)
+	{
+		++id;
+
+		cv::Mat src;
+		src = cv::imread(("./images/mono_" + std::to_string(id) + ".jpg").c_str(), CV_LOAD_IMAGE_COLOR);
+		if (src.empty()) {
+			continue;
+		}
+
+		IplImage copy;
+		copy = src;
+		IplImage *src1 = &copy;
+		IplImage *dst_persp = cvCreateImage(cvGetSize(src1), 8, 3);
+
+
+		CvMat* mapx_persp = cvCreateMat(src1->height, src1->width, CV_32FC1);
+		CvMat* mapy_persp = cvCreateMat(src1->height, src1->width, CV_32FC1);
+
+		float sf = 1.5;
+		create_perspecive_undistortion_LUT(mapx_persp, mapy_persp, &o, sf);
+
+		cvRemap(src1, dst_persp, mapx_persp, mapy_persp, CV_INTER_LINEAR + CV_WARP_FILL_OUTLIERS, cvScalarAll(0));
+
+		source = cv::cvarrToMat(src1);
+		destination = cv::cvarrToMat(dst_persp);
+
+		__int64 curNow = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+		// Pass the image to the SLAM system
+		Tcw = SLAM.TrackMonocular(destination, curNow / 1000.0);
+
+		if (cv::waitKey(1) >= 0)
+			break;
+	}
+
+	// Stop all threads
+	SLAM.Shutdown();
+
+	return 0;
+}
+#else
 int main(int argc, char **argv)
 {
 
@@ -290,7 +385,7 @@ int main(int argc, char **argv)
 
     return 0;
 }
-
+#endif
 void cam2world(double point3D[3], double point2D[2], struct ocam_model *myocam_model)
 {
 	double *pol = myocam_model->pol;
