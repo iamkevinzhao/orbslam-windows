@@ -185,6 +185,36 @@ int main(int argc, char **argv)
 			continue;
 		}
 
+		cv::Mat stereo;
+		stereo = cv::imread(("./images/stereo_" + std::to_string(id) + ".jpg").c_str(), CV_LOAD_IMAGE_COLOR);
+		if (!stereo.empty()) {
+			cv::Rect roi(0, 0, 639, 479);
+			stereo = stereo(roi);
+
+			IplImage copy;
+			copy = stereo;
+			IplImage *src1 = &copy;
+			IplImage *dst_persp = cvCreateImage(cvGetSize(src1), 8, 3);
+
+
+			CvMat* mapx_persp = cvCreateMat(src1->height, src1->width, CV_32FC1);
+			CvMat* mapy_persp = cvCreateMat(src1->height, src1->width, CV_32FC1);
+
+			float sf = 1.5;
+			create_perspecive_undistortion_LUT(mapx_persp, mapy_persp, &o, sf);
+
+			cvRemap(src1, dst_persp, mapx_persp, mapy_persp, CV_INTER_LINEAR + CV_WARP_FILL_OUTLIERS, cvScalarAll(0));
+
+			cv::Mat source = cv::cvarrToMat(src1);
+			cv::Mat destination = cv::cvarrToMat(dst_persp);
+
+			int height = 479 * 0.21;
+			cv::line(destination, cv::Point(0, height), cv::Point(639, height), cv::Scalar(255, 0, 0));
+
+			cv::namedWindow("Stereo Image", 1);
+			cv::imshow("Stereo Image", destination);
+		}
+
 		IplImage copy;
 		copy = src;
 		IplImage *src1 = &copy;
